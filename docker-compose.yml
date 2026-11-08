@@ -3,6 +3,7 @@ services:
     image: floci/floci:latest
     container_name: floci
     user: root
+    restart: unless-stopped # vuelve solo si Docker Desktop se reinicia
     ports:
       - "4566:4566"
     environment:
