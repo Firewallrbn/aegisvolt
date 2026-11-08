@@ -7,6 +7,9 @@ resources:
   - station-reservation.yaml
   - billing-wallet.yaml
   - energy-dispatch.yaml
+  - canary-analysis.yaml
+configurations:
+  - rollout-transform.yaml
 
 # Igual en los 3 ambientes; cada overlay agrega APP_ENV y el endpoint de su VPC
 configMapGenerator:

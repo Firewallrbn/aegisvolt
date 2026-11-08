@@ -1,0 +1,21 @@
+# Verificación del canary: el /health de los pods nuevos debe responder ok 6 veces seguidas (30 s).
+# Un fallo (o 4 errores de conexión) aborta el Rollout y Argo vuelve todo el tráfico a la versión estable.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: canary-health
+spec:
+  args:
+    - name: service
+    - name: port
+  metrics:
+    - name: canary-health
+      interval: 5s
+      count: 6
+      failureLimit: 0
+      consecutiveErrorLimit: 4
+      successCondition: result.ok == true
+      provider:
+        web:
+          url: "http://{{args.service}}-canary.aegisvolt.svc.cluster.local:{{args.port}}/health"
+          timeoutSeconds: 3

@@ -23,8 +23,37 @@ mkdir -p "$build"
   echo "images:"
   for s in $services; do echo "  - { name: $s, newName: $registry/$s, newTag: \"$tag\" }"; done
 } > "$build/kustomization.yaml"
+
+# Argo Rollouts (controlador del canary): idempotente, solo instala si falta
+if ! kubectl --kubeconfig "$kube" get crd rollouts.argoproj.io >/dev/null 2>&1; then
+  kubectl --kubeconfig "$kube" create namespace argo-rollouts
+  kubectl --kubeconfig "$kube" apply -n argo-rollouts --server-side \
+    -f https://github.com/argoproj/argo-rollouts/releases/download/v1.10.1/install.yaml
+  kubectl --kubeconfig "$kube" -n argo-rollouts rollout status deploy/argo-rollouts --timeout=180s
+fi
+
 kubectl --kubeconfig "$kube" apply -k "$build"
-for s in $services; do k rollout status "deploy/$s" --timeout=180s; done
+
+# Espera cada canary: Healthy = promovido al 100%; Degraded = análisis falló y Argo volvió a la versión estable
+wait_rollout() {
+  local gen obs phase
+  for _ in $(seq 120); do
+    gen=$(k get rollout "$1" -o jsonpath='{.metadata.generation}')
+    obs=$(k get rollout "$1" -o jsonpath='{.status.observedGeneration}')
+    phase=$(k get rollout "$1" -o jsonpath='{.status.phase}')
+    if [ "$gen" = "$obs" ]; then
+      case $phase in
+        Healthy) echo "[$1] canary OK, promovido al 100%"; return 0 ;;
+        Degraded) echo "[$1] canary FALLÓ: rollback automático a la versión estable" >&2; return 1 ;;
+      esac
+    fi
+    sleep 3
+  done
+  echo "[$1] timeout esperando el canary" >&2; return 1
+}
+failed=0
+for s in $services; do wait_rollout "$s" || failed=1; done
+[ "$failed" -eq 0 ] || exit 1
 
 # NLB: el target es la IP del nodo dentro de la VPC del ambiente + NodePort 30400 del gateway
 cd infra

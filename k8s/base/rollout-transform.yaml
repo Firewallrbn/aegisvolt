@@ -1,0 +1,14 @@
+# Enseña a kustomize que un Rollout referencia ConfigMap/Secret (por defecto solo lo sabe de Deployment).
+# Sin esto el Rollout apuntaría al nombre sin hash y no se reiniciaría al cambiar la configuración.
+# (Las imágenes no hacen falta: kustomize ya las reemplaza en spec/template/spec/containers de cualquier tipo.)
+nameReference:
+  - kind: ConfigMap
+    version: v1
+    fieldSpecs:
+      - path: spec/template/spec/containers/envFrom/configMapRef/name
+        kind: Rollout
+  - kind: Secret
+    version: v1
+    fieldSpecs:
+      - path: spec/template/spec/containers/envFrom/secretRef/name
+        kind: Rollout

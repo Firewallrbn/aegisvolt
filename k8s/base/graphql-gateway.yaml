@@ -1,12 +1,27 @@
-apiVersion: apps/v1
-kind: Deployment
+# Canary sin service mesh: el tráfico se reparte por proporción de pods.
+# 5 réplicas -> al 20% hay 1 pod canary y 4 estables detrás del mismo Service (1 de cada 5 peticiones).
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
 metadata:
   name: graphql-gateway
   labels: { app: graphql-gateway }
 spec:
-  replicas: 1
+  replicas: 5
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 90 # un canary que no queda listo en 90 s (ej. imagen rota) se aborta solo
+  progressDeadlineAbort: true
   selector:
     matchLabels: { app: graphql-gateway }
+  strategy:
+    canary:
+      canaryService: graphql-gateway-canary # solo para que el análisis consulte a los pods nuevos
+      steps:
+        - setWeight: 20
+        - analysis:
+            templates: [{ templateName: canary-health }]
+            args:
+              - { name: service, value: graphql-gateway }
+              - { name: port, value: "4000" }
   template:
     metadata:
       labels: { app: graphql-gateway }
@@ -25,7 +40,8 @@ spec:
             requests: { cpu: 25m, memory: 64Mi }
             limits: { memory: 192Mi }
 ---
-# NodePort fijo: el NLB interno (target group tipo ip) apunta a <IP del nodo en la VPC>:30400
+# NodePort fijo: el NLB interno (target group tipo ip) apunta a <IP del nodo en la VPC>:30400.
+# Selecciona estables y canary a la vez: así el canary recibe su proporción de tráfico real.
 apiVersion: v1
 kind: Service
 metadata:
@@ -34,3 +50,11 @@ spec:
   type: NodePort
   selector: { app: graphql-gateway }
   ports: [{ port: 4000, targetPort: 4000, nodePort: 30400 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphql-gateway-canary
+spec:
+  selector: { app: graphql-gateway } # Argo le agrega el hash de la versión canary
+  ports: [{ port: 4000, targetPort: 4000 }]
