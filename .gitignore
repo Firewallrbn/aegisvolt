@@ -7,6 +7,9 @@
 crash.log
 *.tfplan
 
+# Kustomizations temporales generadas por scripts/deploy.sh
+k8s/.build/
+
 # Secretos / entorno
 .env
 .env.*

@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-wallet
+  labels: { app: billing-wallet }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: billing-wallet }
+  template:
+    metadata:
+      labels: { app: billing-wallet }
+    spec:
+      containers:
+        - name: billing-wallet
+          image: billing-wallet
+          ports: [{ containerPort: 4002 }]
+          env: [{ name: PORT, value: "4002" }]
+          envFrom:
+            - configMapRef: { name: aegisvolt-config }
+            - secretRef: { name: aws-credentials }
+          readinessProbe: { httpGet: { path: /health, port: 4002 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: 4002 }, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { memory: 192Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-wallet
+spec:
+  selector: { app: billing-wallet }
+  ports: [{ port: 4002, targetPort: 4002 }]

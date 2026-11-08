@@ -10,4 +10,4 @@ port=$("$DOCKER" port "$c" 6443 | head -1 | sed 's/.*://') # el puerto cambia ca
 out=${KUBECONFIG_DIR:-$HOME/.kube}/aegisvolt-$env
 mkdir -p "$(dirname "$out")"
 "$DOCKER" exec "$c" cat /etc/rancher/k3s/k3s.yaml | sed "s#127.0.0.1:6443#127.0.0.1:$port#; s#: default\$#: aegisvolt-$env#" > "$out"
-echo "$out"
+command -v cygpath >/dev/null && cygpath -m "$out" || echo "$out" # C:/... para el kubectl.exe de Windows

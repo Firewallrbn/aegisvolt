@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: station-reservation
+  labels: { app: station-reservation }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: station-reservation }
+  template:
+    metadata:
+      labels: { app: station-reservation }
+    spec:
+      containers:
+        - name: station-reservation
+          image: station-reservation
+          ports: [{ containerPort: 4001 }]
+          env: [{ name: PORT, value: "4001" }]
+          envFrom:
+            - configMapRef: { name: aegisvolt-config }
+            - secretRef: { name: aws-credentials }
+          readinessProbe: { httpGet: { path: /health, port: 4001 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: 4001 }, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { memory: 192Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: station-reservation
+spec:
+  selector: { app: station-reservation }
+  ports: [{ port: 4001, targetPort: 4001 }]

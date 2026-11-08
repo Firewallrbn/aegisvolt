@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: energy-dispatch
+  labels: { app: energy-dispatch }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: energy-dispatch }
+  template:
+    metadata:
+      labels: { app: energy-dispatch }
+    spec:
+      containers:
+        - name: energy-dispatch
+          image: energy-dispatch
+          ports: [{ containerPort: 4003 }]
+          env: [{ name: PORT, value: "4003" }]
+          envFrom:
+            - configMapRef: { name: aegisvolt-config }
+            - secretRef: { name: aws-credentials }
+          readinessProbe: { httpGet: { path: /health, port: 4003 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: 4003 }, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { memory: 192Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: energy-dispatch
+spec:
+  selector: { app: energy-dispatch }
+  ports: [{ port: 4003, targetPort: 4003 }]
