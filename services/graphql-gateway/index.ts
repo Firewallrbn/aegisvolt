@@ -1,5 +1,6 @@
 // graphql-gateway: esquema GraphQL unificado y orquestador de la SAGA "Reservar y Activar Carga".
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { buildSchema, graphql } from 'graphql';
 import { PutCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { call, ddb, ENV, getItem, HttpError, log, now, serve, table } from '../common/index.ts';
@@ -13,37 +14,7 @@ const URLS = {
 const SAGAS = table('sagas');
 const FLAGS = table('flags');
 
-const schema = buildSchema(`
-  type Connector { id: ID!, status: String!, powerKw: Int!, ultra: Boolean!, sagaId: ID }
-  type Station { id: ID!, connectors: [Connector!]! }
-  type Flag { name: String!, enabled: Boolean! }
-  type Wallet { fleetId: ID!, balance: Float! }
-  type SagaStep { step: String!, status: String!, at: String!, error: String }
-  type Saga {
-    id: ID!, status: String!, stationId: ID!, connectorId: ID!, fleetId: ID!, kwh: Float!,
-    amount: Float, error: String, steps: [SagaStep!]!, createdAt: String!, updatedAt: String
-  }
-  type Telemetry { sagaId: ID!, status: String!, powerKw: Float!, kwhDelivered: Float!, startedAt: String!, stoppedAt: String }
-
-  type Query {
-    env: String!
-    stations: [Station!]!
-    flags: [Flag!]!
-    wallet(fleetId: ID!): Wallet
-    sagas: [Saga!]!
-    saga(id: ID!): Saga
-    telemetry(sagaId: ID!): Telemetry
-  }
-
-  type Mutation {
-    "Dispara la SAGA: reserva -> cobro -> activación, con compensaciones si algo falla"
-    reserveAndCharge(stationId: ID!, connectorId: ID!, fleetId: ID!, kwh: Float!): Saga!
-    "Fin normal de la carga: detiene el cargador y libera el conector"
-    finishCharge(sagaId: ID!): Saga!
-    "Cambia una feature flag de este ambiente en caliente (sin redesplegar)"
-    setFlag(name: String!, enabled: Boolean!): Flag!
-  }
-`);
+const schema = buildSchema(readFileSync(new URL('./schema.graphql', import.meta.url), 'utf8'));
 
 const updateSaga = (id: string, fields: Record<string, unknown>) => {
   // Sin undefined: el SDK los descarta y la expresión quedaría apuntando a un :v inexistente

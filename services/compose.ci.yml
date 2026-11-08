@@ -1,0 +1,42 @@
+# Los 4 servicios como contenedores (las mismas imágenes que van al clúster) contra las tablas *-ci de Floci.
+# Uso: docker compose -f compose.ci.yml up -d --build --wait   /   docker compose -f compose.ci.yml down
+name: aegisvolt-ci
+
+x-service: &service
+  environment:
+    APP_ENV: ci
+    AWS_ENDPOINT_URL: http://floci:4566 # Floci por nombre en la red de docker-compose.yml
+    AWS_REGION: us-east-1
+    AWS_ACCESS_KEY_ID: test
+    AWS_SECRET_ACCESS_KEY: test
+    RESERVATION_URL: http://station-reservation:4001
+    BILLING_URL: http://billing-wallet:4002
+    DISPATCH_URL: http://energy-dispatch:4003
+  networks: [floci]
+
+services:
+  graphql-gateway:
+    <<: *service
+    build: { context: ., args: { SERVICE: graphql-gateway } }
+    ports: ["14000:4000"]
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4000/health"], interval: 2s, retries: 30 }
+  station-reservation:
+    <<: *service
+    build: { context: ., args: { SERVICE: station-reservation } }
+    ports: ["14001:4001"]
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4001/health"], interval: 2s, retries: 30 }
+  billing-wallet:
+    <<: *service
+    build: { context: ., args: { SERVICE: billing-wallet } }
+    ports: ["14002:4002"]
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4002/health"], interval: 2s, retries: 30 }
+  energy-dispatch:
+    <<: *service
+    build: { context: ., args: { SERVICE: energy-dispatch } }
+    ports: ["14003:4003"]
+    healthcheck: { test: ["CMD", "wget", "-qO-", "http://localhost:4003/health"], interval: 2s, retries: 30 }
+
+networks:
+  floci:
+    external: true
+    name: aegisvolt_default

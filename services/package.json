@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node dev.ts",
     "test": "node --test \"**/*.test.ts\"",
+    "integration": "node --test \"integration/*.int.ts\"",
     "e2e": "node --test \"e2e/*.e2e.ts\"",
     "typecheck": "tsc"
   },

@@ -1,0 +1,57 @@
+# Post-merge: la rama que recibió el merge decide el ambiente (dev, test o prod).
+name: deploy
+
+on:
+  push:
+    branches: [dev, test, prod]
+
+# Un despliegue a la vez por ambiente; nunca se cancela uno a medias
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  ENVIRONMENT: ${{ github.ref_name }} # dev | test | prod
+  AWS_ENDPOINT_URL: http://localhost:4566
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_PAGER: ""
+
+jobs:
+  terraform-apply:
+    runs-on: [self-hosted, aegisvolt]
+    steps:
+      - uses: actions/checkout@v4
+      - name: terraform apply en el workspace ${{ github.ref_name }}
+        working-directory: infra
+        run: |
+          terraform init -input=false >/dev/null
+          terraform workspace select "$ENVIRONMENT"
+          terraform apply -auto-approve -input=false -lock-timeout=120s
+
+  canary-deploy:
+    needs: terraform-apply
+    runs-on: [self-hosted, aegisvolt]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Calcular tag de imagen
+        id: tag
+        # Hash del árbol de services/: mismo código = mismo tag. Así test y prod reutilizan
+        # exactamente la imagen ya probada en dev, aunque el merge cree un commit nuevo.
+        run: echo "tag=$(git rev-parse --short=12 HEAD:services)" >> "$GITHUB_OUTPUT"
+      - name: Construir y subir imágenes (solo si ese tag no existe)
+        run: |
+          if aws ecr describe-images --repository-name aegisvolt/graphql-gateway --image-ids imageTag=${{ steps.tag.outputs.tag }} >/dev/null 2>&1; then
+            echo "La imagen ${{ steps.tag.outputs.tag }} ya existe: se promueve sin reconstruir"
+          else
+            bash scripts/build-push.sh ${{ steps.tag.outputs.tag }}
+          fi
+      - name: Asegurar que el clúster EKS esté corriendo
+        run: bash scripts/recover-eks.sh "$ENVIRONMENT"
+      - name: Canary (20% -> análisis -> 100%, rollback automático si falla)
+        run: bash scripts/deploy.sh "$ENVIRONMENT" ${{ steps.tag.outputs.tag }}
