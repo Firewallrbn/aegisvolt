@@ -11,7 +11,7 @@ function Logo() {
   return (
     <svg className="logo" viewBox="0 0 32 32" aria-label="AegisVolt">
       <g strokeLinecap="round" strokeWidth="3.2" fill="none">
-        <path d="M9 21 19 9" stroke="#f3e6cf" /><path d="M13 24 23 12" stroke="#ff5a45" /><path d="M7 15 11 10" stroke="#8a8a8a" />
+        <path d="M9 21 19 9" stroke="#f3e6cf" /><path d="M13 24 23 12" stroke="#3fd27a" /><path d="M7 15 11 10" stroke="#8a8a8a" />
       </g>
     </svg>
   );

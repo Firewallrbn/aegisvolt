@@ -63,8 +63,8 @@ function LightTrails() {
       ctx.clearRect(0, 0, w, h);
       const grad = ctx.createLinearGradient(w * 0.46, 0, w * 0.8, 0);
       grad.addColorStop(0, '#f4e7cf');
-      grad.addColorStop(0.55, '#f0b896');
-      grad.addColorStop(1, '#ff4f3f');
+      grad.addColorStop(0.55, '#cfe3b4');
+      grad.addColorStop(1, '#3fd27a');
       ctx.globalCompositeOperation = 'lighter';
       ctx.lineCap = 'round';
 
