@@ -1,4 +1,4 @@
-// Integración: cada microservicio contra su tabla DynamoDB real (ambiente "ci"). Uso: npm run integration
+// Integración: cada microservicio y el endpoint GraphQL contra tablas DynamoDB reales (ambiente "ci"). Uso: npm run integration
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +9,7 @@ const ENV = process.env.APP_ENV ?? 'ci';
 const RESERVATION = process.env.RESERVATION_URL ?? 'http://localhost:14001';
 const BILLING = process.env.BILLING_URL ?? 'http://localhost:14002';
 const DISPATCH = process.env.DISPATCH_URL ?? 'http://localhost:14003';
+const GATEWAY = process.env.GATEWAY_URL ?? 'http://localhost:14000/graphql';
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({
   endpoint: process.env.AWS_ENDPOINT_URL ?? 'http://localhost:4566',
   region: 'us-east-1',
@@ -65,4 +66,19 @@ test('dispatch: lee la feature flag en caliente desde DynamoDB, sin reiniciar', 
   }
   const ok = await post(`${DISPATCH}/sessions`, { sagaId: randomUUID(), stationId: 'st-sur', connectorId: 'c2', powerKw: 50 });
   assert.equal(ok.status, 200);
+});
+
+test('graphql: el gateway resuelve estaciones, flags y saldo leyendo las tablas DynamoDB', async () => {
+  const res = await post(GATEWAY, {
+    query: '{ env stations { id connectors { id status powerKw } } flags { name enabled } wallet(fleetId: "fleet-andina") { balance } }',
+  });
+  assert.equal(res.status, 200);
+  const { data, errors } = await res.json();
+  assert.equal(errors, undefined);
+  assert.equal(data.env, ENV);
+  assert.deepEqual(data.stations.map((s: { id: string }) => s.id).sort(), ['st-norte', 'st-sur']);
+  assert.equal(data.stations.flatMap((s: { connectors: unknown[] }) => s.connectors).length, 4);
+  assert.equal(data.flags.length, 3);
+  const balance = (await item('billing', { pk: 'WALLET#fleet-andina', sk: 'BALANCE' }))?.balance;
+  assert.equal(data.wallet.balance, balance); // GraphQL refleja exactamente lo que hay en la tabla
 });

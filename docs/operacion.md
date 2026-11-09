@@ -75,4 +75,5 @@ kubectl --kubeconfig "$KC" -n aegisvolt get rollout graphql-gateway -o jsonpath=
 | Rutas `/aegisvolt/...` se convierten en `C:/Program Files/Git/...` | conversión de rutas de MSYS | `export MSYS_NO_PATHCONV=1` |
 | `kubectl` no conecta tras recrear el clúster | el puerto del API server cambia | volver a correr `kubeconfig.sh` |
 | API Gateway responde 503 | el ambiente está apagado o el NLB no tiene target | `recover-eks.sh` + `deploy.sh` |
+| El contenedor k3s sale con `failed to find interface with specified node ip` | Floci conserva el volumen de k3s al recrear el clúster y ese volumen guarda la IP del nodo anterior | `recover-eks.sh` ya borra contenedor y volumen antes de recrear (solo tienen estado del clúster; los datos están en DynamoDB) |
 | `git push` falla en Git Bash | el helper de credenciales necesita `sh` | hacer el push desde PowerShell |
