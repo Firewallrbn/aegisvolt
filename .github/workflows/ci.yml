@@ -42,6 +42,9 @@ jobs:
       - name: Typecheck TypeScript
         working-directory: services
         run: npm ci && npm run typecheck
+      - name: Validar esquema GraphQL (compila y expone el contrato de la UI)
+        working-directory: services
+        run: node --test graphql-gateway/schema.test.ts
       - name: Typecheck y build del frontend
         working-directory: frontend
         run: npm ci && npm run build
