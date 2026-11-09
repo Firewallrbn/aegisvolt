@@ -1,0 +1,136 @@
+# Checks obligatorios de todo PR hacia dev/test/prod (la protección de ramas exige que estén en verde).
+name: ci
+
+on:
+  pull_request:
+    branches: [dev, test, prod]
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  AWS_ENDPOINT_URL: http://localhost:4566
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_DEFAULT_REGION: us-east-1
+  AWS_PAGER: ""
+
+jobs:
+  # Promoción lineal: feature/* -> dev -> test -> prod. Nunca una feature directo a test o prod.
+  promotion-check:
+    runs-on: [self-hosted, aegisvolt]
+    steps:
+      - name: Validar origen y destino del PR
+        run: |
+          base="${{ github.base_ref }}"; head="${{ github.head_ref }}"
+          case "$base" in
+            dev)  [[ "$head" != test && "$head" != prod ]] || { echo "::error::No se promueve hacia atrás ($head -> dev)"; exit 1; } ;;
+            test) [[ "$head" == dev ]]  || { echo "::error::A test solo se llega desde dev (vino de $head)"; exit 1; } ;;
+            prod) [[ "$head" == test ]] || { echo "::error::A prod solo se llega desde test (vino de $head)"; exit 1; } ;;
+          esac
+          echo "OK: $head -> $base"
+
+  lint-build:
+    runs-on: [self-hosted, aegisvolt]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Typecheck TypeScript
+        working-directory: services
+        run: npm ci && npm run typecheck
+      - name: Typecheck y build del frontend
+        working-directory: frontend
+        run: npm ci && npm run build
+      - name: Validar Terraform (formato y sintaxis)
+        run: |
+          terraform fmt -check -recursive infra
+          terraform -chdir=infra init -backend=false -input=false >/dev/null && terraform -chdir=infra validate
+      - name: Construir las 4 imágenes Docker
+        run: |
+          DOCKER=$(command -v docker.exe || command -v docker)
+          for s in graphql-gateway station-reservation billing-wallet energy-dispatch; do
+            "$DOCKER" build -q --build-arg SERVICE=$s -t aegisvolt-ci/$s:${{ github.sha }} services
+          done
+
+  unit-tests:
+    runs-on: [self-hosted, aegisvolt]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tests unitarios (SAGA y esquema GraphQL)
+        working-directory: services
+        run: npm ci && npm test
+
+  integration-tests:
+    needs: [lint-build, unit-tests]
+    runs-on: [self-hosted, aegisvolt]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Crear tablas efímeras *-ci
+        # Borra restos de una corrida que murió antes de limpiar: el state local de infra/ci no sobrevive al checkout
+        run: |
+          for t in reservations billing dispatch flags sagas; do
+            aws dynamodb delete-table --table-name aegisvolt-$t-ci >/dev/null 2>&1 && aws dynamodb wait table-not-exists --table-name aegisvolt-$t-ci || true
+          done
+          terraform -chdir=infra/ci init -input=false >/dev/null && terraform -chdir=infra/ci apply -auto-approve -input=false >/dev/null
+      - name: Levantar los 4 servicios
+        working-directory: services
+        run: |
+          "$(command -v docker.exe || command -v docker)" compose -f compose.ci.yml up -d --build --wait
+      - name: Tests de integración contra DynamoDB
+        working-directory: services
+        run: npm ci && npm run integration
+      - name: Limpiar
+        if: always()
+        run: |
+          (cd services && "$(command -v docker.exe || command -v docker)" compose -f compose.ci.yml down) || true
+          terraform -chdir=infra/ci destroy -auto-approve -input=false >/dev/null
+
+  e2e-tests:
+    needs: integration-tests
+    runs-on: [self-hosted, aegisvolt]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Crear tablas efímeras *-ci
+        # Borra restos de una corrida que murió antes de limpiar: el state local de infra/ci no sobrevive al checkout
+        run: |
+          for t in reservations billing dispatch flags sagas; do
+            aws dynamodb delete-table --table-name aegisvolt-$t-ci >/dev/null 2>&1 && aws dynamodb wait table-not-exists --table-name aegisvolt-$t-ci || true
+          done
+          terraform -chdir=infra/ci init -input=false >/dev/null && terraform -chdir=infra/ci apply -auto-approve -input=false >/dev/null
+      - name: Levantar los 4 servicios
+        working-directory: services
+        run: |
+          "$(command -v docker.exe || command -v docker)" compose -f compose.ci.yml up -d --build --wait
+      - name: E2E de la SAGA vía GraphQL (feliz, sin fondos, falla física, idempotencia)
+        working-directory: services
+        env:
+          GATEWAY_URL: http://localhost:14000/graphql
+          BILLING_URL: http://localhost:14002
+        run: npm ci && npm run e2e
+      - name: Limpiar
+        if: always()
+        run: |
+          (cd services && "$(command -v docker.exe || command -v docker)" compose -f compose.ci.yml down) || true
+          terraform -chdir=infra/ci destroy -auto-approve -input=false >/dev/null
+
+  # Plan contra el workspace de la rama destino: muestra exactamente qué cambiaría en ese ambiente
+  terraform-plan:
+    runs-on: [self-hosted, aegisvolt]
+    steps:
+      - uses: actions/checkout@v4
+      - name: terraform plan (${{ github.base_ref }})
+        working-directory: infra
+        run: |
+          terraform init -input=false >/dev/null
+          terraform workspace select ${{ github.base_ref }}
+          set +e
+          terraform plan -input=false -no-color -lock-timeout=120s -detailed-exitcode -out=plan.tfplan > plan.txt
+          code=$?
+          set -e
+          cat plan.txt
+          { echo "### terraform plan → workspace \`${{ github.base_ref }}\`"; echo '```'; grep -E '^Plan:|No changes' plan.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          [ "$code" -ne 1 ] # 0 = sin cambios, 2 = hay cambios (ok); 1 = error

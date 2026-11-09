@@ -1,0 +1,56 @@
+# shortcut: 1 réplica por la RAM del PC; con 1 réplica el canary queda 50/50 durante el análisis. Subir a 5 en AWS real.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: energy-dispatch
+  labels: { app: energy-dispatch }
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 90 # un canary que no queda listo en 90 s (ej. imagen rota) se aborta solo
+  progressDeadlineAbort: true
+  selector:
+    matchLabels: { app: energy-dispatch }
+  strategy:
+    canary:
+      canaryService: energy-dispatch-canary
+      steps:
+        - setWeight: 20
+        - analysis:
+            templates: [{ templateName: canary-health }]
+            args:
+              - { name: service, value: energy-dispatch }
+              - { name: port, value: "4003" }
+  template:
+    metadata:
+      labels: { app: energy-dispatch }
+    spec:
+      containers:
+        - name: energy-dispatch
+          image: energy-dispatch
+          ports: [{ containerPort: 4003 }]
+          env: [{ name: PORT, value: "4003" }]
+          envFrom:
+            - configMapRef: { name: aegisvolt-config }
+            - secretRef: { name: aws-credentials }
+          readinessProbe: { httpGet: { path: /health, port: 4003 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: 4003 }, periodSeconds: 10 }
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { memory: 192Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: energy-dispatch
+spec:
+  selector: { app: energy-dispatch }
+  ports: [{ port: 4003, targetPort: 4003 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: energy-dispatch-canary
+spec:
+  selector: { app: energy-dispatch }
+  ports: [{ port: 4003, targetPort: 4003 }]

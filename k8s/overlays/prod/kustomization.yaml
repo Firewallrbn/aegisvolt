@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources: [../../base]
+configMapGenerator:
+  - name: aegisvolt-config
+    behavior: merge
+    literals:
+      - APP_ENV=prod
+      - AWS_ENDPOINT_URL=http://10.30.0.2:4566 # Floci en la IP .2 de la VPC de prod
