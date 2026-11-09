@@ -32,3 +32,4 @@ Thumbs.db
 # Python (observability/)
 .venv/
 __pycache__/
+frontend/dist/
