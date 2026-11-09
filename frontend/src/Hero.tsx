@@ -19,15 +19,14 @@ function bezier(p0: Pt, p1: Pt, p2: Pt, p3: Pt, n: number): Pt[] {
 }
 
 // Cada estela sube desde abajo a la izquierda, se junta con las demás y se abre hacia abajo a la derecha
-function paths(w: number, h: number): { main: Pt[]; tail: Pt[] }[] {
+function paths(w: number, h: number): { main: Pt[] }[] {
   return Array.from({ length: LINES }, (_, i) => {
     const t = i / (LINES - 1);
     const c: Pt = [w * (0.64 + 0.035 * t), h * (0.385 + 0.085 * t)];
     const a = bezier([w * (-0.04 + 0.66 * t), h * 1.04], [w * (0.2 + 0.44 * t), h * 0.68], [w * (0.45 + 0.14 * t), h * (0.4 + 0.07 * t)], c, 140);
     // la de más arriba en la curva es la exterior: termina más a la derecha, así las estelas no se cruzan
     const b = bezier(c, [w * (0.81 - 0.02 * t), h * (0.4 + 0.1 * t)], [w * (0.93 - 0.05 * t), h * (0.56 + 0.08 * t)], [w * (1.04 - 0.2 * t), h * 1.04], 120);
-    const tail = bezier(c, [w * 0.56, h * (0.36 + 0.01 * t)], [w * 0.45, h * (0.3 + 0.006 * t)], [w * (0.33 + 0.015 * t), h * (0.27 + 0.006 * t)], 60);
-    return { main: [...a, ...b.slice(1)], tail };
+    return { main: [...a, ...b.slice(1)] };
   });
 }
 
@@ -68,14 +67,13 @@ function LightTrails() {
       ctx.globalCompositeOperation = 'lighter';
       ctx.lineCap = 'round';
 
-      for (const [i, { main, tail }] of lines.entries()) {
+      for (const [i, { main }] of lines.entries()) {
         const upto = Math.max(2, Math.floor(main.length * Math.min(1, ease * 1.15 - i * 0.012)));
         ctx.strokeStyle = grad;
         // halo ancho y tenue + núcleo fino y brillante = brillo de larga exposición
         ctx.globalAlpha = 0.16; ctx.lineWidth = 7; stroke(ctx, main, upto);
         ctx.globalAlpha = 0.35; ctx.lineWidth = 3; stroke(ctx, main, upto);
         ctx.globalAlpha = 0.95; ctx.lineWidth = 1.3; stroke(ctx, main, upto);
-        ctx.globalAlpha = 0.13 * ease; ctx.lineWidth = 0.8; stroke(ctx, tail, tail.length);
 
         if (!reduced && draw === 1) {
           // pulso de energía que recorre la estela

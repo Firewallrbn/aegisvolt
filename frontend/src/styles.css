@@ -57,7 +57,7 @@ code { font: 12px/1.4 ui-monospace, 'Cascadia Code', monospace; color: var(--tex
 .btn-ghost:hover { background: rgba(255,255,255,.1); }
 .wide { width: 100%; }
 
-.ruler { position: absolute; right: clamp(20px, 3vw, 44px); top: 34%; width: min(360px, 40vw); }
+.ruler { position: absolute; right: clamp(20px, 3vw, 44px); top: 22%; width: min(360px, 40vw); }
 .ruler-head { display: flex; justify-content: space-between; color: var(--text-2); font-size: 14px; margin-bottom: 12px; }
 .ruler-head b { color: var(--text); font-weight: 600; }
 .ruler-ticks { display: grid; grid-template-columns: repeat(19, 1fr); align-items: end; height: 22px; }
