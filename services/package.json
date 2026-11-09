@@ -1,0 +1,25 @@
+{
+  "name": "aegisvolt-services",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "dev": "node dev.ts",
+    "test": "node --test \"**/*.test.ts\"",
+    "integration": "node --test \"integration/*.int.ts\"",
+    "e2e": "node --test \"e2e/*.e2e.ts\"",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch-logs": "^3.1164.0",
+    "@aws-sdk/client-dynamodb": "^3.1164.0",
+    "@aws-sdk/lib-dynamodb": "^3.1164.0",
+    "graphql": "^16.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}
