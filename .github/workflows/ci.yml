@@ -70,14 +70,15 @@ jobs:
         run: terraform -chdir=infra/ci init -input=false >/dev/null && terraform -chdir=infra/ci apply -auto-approve -input=false >/dev/null
       - name: Levantar los 4 servicios
         working-directory: services
-        run: $(command -v docker.exe || command -v docker) compose -f compose.ci.yml up -d --build --wait
+        run: |
+          "$(command -v docker.exe || command -v docker)" compose -f compose.ci.yml up -d --build --wait
       - name: Tests de integración contra DynamoDB
         working-directory: services
         run: npm ci && npm run integration
       - name: Limpiar
         if: always()
         run: |
-          (cd services && $(command -v docker.exe || command -v docker) compose -f compose.ci.yml down)
+          (cd services && "$(command -v docker.exe || command -v docker)" compose -f compose.ci.yml down)
           terraform -chdir=infra/ci destroy -auto-approve -input=false >/dev/null
 
   e2e-tests:
@@ -89,7 +90,8 @@ jobs:
         run: terraform -chdir=infra/ci init -input=false >/dev/null && terraform -chdir=infra/ci apply -auto-approve -input=false >/dev/null
       - name: Levantar los 4 servicios
         working-directory: services
-        run: $(command -v docker.exe || command -v docker) compose -f compose.ci.yml up -d --build --wait
+        run: |
+          "$(command -v docker.exe || command -v docker)" compose -f compose.ci.yml up -d --build --wait
       - name: E2E de la SAGA vía GraphQL (feliz, sin fondos, falla física, idempotencia)
         working-directory: services
         env:
@@ -99,7 +101,7 @@ jobs:
       - name: Limpiar
         if: always()
         run: |
-          (cd services && $(command -v docker.exe || command -v docker) compose -f compose.ci.yml down)
+          (cd services && "$(command -v docker.exe || command -v docker)" compose -f compose.ci.yml down)
           terraform -chdir=infra/ci destroy -auto-approve -input=false >/dev/null
 
   # Plan contra el workspace de la rama destino: muestra exactamente qué cambiaría en ese ambiente
