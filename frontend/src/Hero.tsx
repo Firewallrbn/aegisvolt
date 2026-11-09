@@ -22,10 +22,12 @@ function bezier(p0: Pt, p1: Pt, p2: Pt, p3: Pt, n: number): Pt[] {
 function paths(w: number, h: number): { main: Pt[] }[] {
   return Array.from({ length: LINES }, (_, i) => {
     const t = i / (LINES - 1);
-    const c: Pt = [w * (0.64 + 0.035 * t), h * (0.385 + 0.085 * t)];
-    const a = bezier([w * (-0.04 + 0.66 * t), h * 1.04], [w * (0.2 + 0.44 * t), h * 0.68], [w * (0.45 + 0.14 * t), h * (0.4 + 0.07 * t)], c, 140);
+    const c: Pt = [w * (0.64 + 0.035 * t), h * (0.385 + 0.085 * t)]; // cima del arco
+    // Tangente horizontal y continua en la cima (controles simétricos a cada lado): el arco queda redondo, sin quiebre
+    const k = w * (0.13 - 0.045 * t);
+    const a = bezier([w * (-0.04 + 0.66 * t), h * 1.04], [w * (0.22 + 0.42 * t), h * (0.6 + 0.05 * t)], [c[0] - k, c[1]], c, 140);
     // la de más arriba en la curva es la exterior: termina más a la derecha, así las estelas no se cruzan
-    const b = bezier(c, [w * (0.81 - 0.02 * t), h * (0.4 + 0.1 * t)], [w * (0.93 - 0.05 * t), h * (0.56 + 0.08 * t)], [w * (1.04 - 0.2 * t), h * 1.04], 120);
+    const b = bezier(c, [c[0] + k, c[1]], [w * (0.98 - 0.08 * t), h * (0.5 + 0.1 * t)], [w * (1.04 - 0.2 * t), h * 1.04], 120);
     return { main: [...a, ...b.slice(1)] };
   });
 }
