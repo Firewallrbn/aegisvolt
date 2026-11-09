@@ -42,6 +42,9 @@ jobs:
       - name: Typecheck TypeScript
         working-directory: services
         run: npm ci && npm run typecheck
+      - name: Typecheck y build del frontend
+        working-directory: frontend
+        run: npm ci && npm run build
       - name: Validar Terraform (formato y sintaxis)
         run: |
           terraform fmt -check -recursive infra
