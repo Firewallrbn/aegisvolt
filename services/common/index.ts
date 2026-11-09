@@ -1,6 +1,7 @@
 // Utilidades compartidas: logs JSON, DynamoDB, feature flags, servidor HTTP mínimo e idempotencia.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { basename, dirname } from 'node:path';
+import { CloudWatchLogsClient, CreateLogStreamCommand, PutLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 
@@ -15,8 +16,43 @@ export const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), {
   marshallOptions: { removeUndefinedValues: true },
 });
 
+// CloudWatch: cada servicio envía sus logs a /aegisvolt/<env>/<servicio>, un stream por pod (HOSTNAME).
+// shortcut: envío desde la app en lotes de 1 s (sin Fluent Bit, por RAM); si el pod muere se pierde el último segundo.
+const cwl = new CloudWatchLogsClient({});
+const logGroup = `/aegisvolt/${ENV}/${SERVICE}`;
+const logStream = process.env.HOSTNAME ?? `local-${process.pid}`;
+let pending: { timestamp: number; message: string }[] = [];
+let shipping = process.env.LOG_TO_CLOUDWATCH !== 'false';
+const streamReady = shipping ? openStream() : Promise.resolve();
+
+async function openStream(): Promise<void> {
+  try {
+    await cwl.send(new CreateLogStreamCommand({ logGroupName: logGroup, logStreamName: logStream }));
+  } catch (e) {
+    if ((e as Error).name === 'ResourceAlreadyExistsException') return; // reinicio del mismo pod
+    // El grupo lo crea Terraform; sin él (CI, tests) o sin CloudWatch, se sigue logueando solo a stdout
+    shipping = false;
+    console.log(JSON.stringify({ level: 'warn', msg: `logs solo a stdout (${logGroup}): ${(e as Error).name}` }));
+  }
+}
+
+async function flushLogs(): Promise<void> {
+  if (!shipping || pending.length === 0) return;
+  const logEvents = pending;
+  pending = [];
+  try {
+    await streamReady;
+    if (shipping) await cwl.send(new PutLogEventsCommand({ logGroupName: logGroup, logStreamName: logStream, logEvents }));
+  } catch (e) {
+    console.log(JSON.stringify({ level: 'warn', msg: 'no se pudieron enviar logs a CloudWatch', error: (e as Error).message }));
+  }
+}
+setInterval(flushLogs, 1000).unref();
+
 export function log(level: 'info' | 'warn' | 'error', msg: string, fields: Record<string, unknown> = {}): void {
-  console.log(JSON.stringify({ timestamp: now(), level, env: ENV, service: SERVICE, msg, ...fields }));
+  const message = JSON.stringify({ timestamp: now(), level, env: ENV, service: SERVICE, msg, ...fields });
+  console.log(message);
+  if (shipping) pending.push({ timestamp: Date.now(), message });
 }
 
 export async function getItem(tableName: string, key: Record<string, string>): Promise<Record<string, any> | undefined> {

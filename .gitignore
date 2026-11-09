@@ -28,3 +28,7 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+# Python (observability/)
+.venv/
+__pycache__/
