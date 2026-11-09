@@ -172,3 +172,4 @@ Cada atajo está marcado en el código con un comentario `shortcut:` que dice su
 | `k8s/base/kustomization.yaml` | Credenciales de prueba en un Secret | IRSA (rol IAM por service account) |
 | `services/common` | Logs enviados desde la app en lotes de 1 s, sin Fluent Bit | DaemonSet de Fluent Bit / CloudWatch agent |
 | `frontend/src/api.ts` | Coordenadas de las estaciones en el frontend | Mover lat/lng a DynamoDB |
+| `scripts/deploy.sh` | El pipeline registra la IP del nodo en el target group del NLB (`aws elbv2 register-targets`): la IP del nodo k3s recién se conoce al crear el clúster, así que no es un dato que Terraform pueda declarar. NLB, target group y listener sí son Terraform | AWS Load Balancer Controller (o el node group) registra los targets solo |
