@@ -88,10 +88,10 @@ sequenceDiagram
   autonumber
   participant C as Cliente
   participant A as API Gateway (HTTP API)
-  participant L as VPC Link (SG: egress 80 → CIDR VPC)
-  participant N as NLB interno :80 (subred privada)
-  participant K as Nodo EKS :30400 (NodePort)
-  participant P as Pod graphql-gateway :4000
+  participant L as VPC Link (SG egress 80 hacia CIDR VPC)
+  participant N as NLB interno puerto 80 (subred privada)
+  participant K as Nodo EKS NodePort 30400
+  participant P as Pod graphql-gateway puerto 4000
   participant D as DynamoDB (gateway VPCE)
   C->>A: POST /graphql
   A->>L: integración HTTP_PROXY tipo VPC_LINK
