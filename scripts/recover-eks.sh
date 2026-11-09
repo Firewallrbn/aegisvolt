@@ -10,6 +10,11 @@ for env in "${@:-dev test prod}"; do
       echo "[$e] clúster corriendo"; continue
     fi
     echo "[$e] clúster caído, recreando..."
+    # Floci conserva el volumen de k3s al recrear el clúster, y ese volumen guarda la IP del nodo viejo:
+    # el k3s nuevo muere con "failed to find interface with specified node ip". Solo tiene estado del clúster
+    # (los datos de la app viven en DynamoDB) y el deploy lo vuelve a poblar.
+    "$DOCKER" rm -f "floci-aws-eks-aegisvolt-$e" >/dev/null 2>&1 || true
+    "$DOCKER" volume rm "floci-aws-eks-aegisvolt-$e" >/dev/null 2>&1 || true
     terraform init -input=false -reconfigure >/dev/null
     terraform workspace select "$e" >/dev/null
     terraform apply -replace=module.eks.aws_eks_cluster.this -auto-approve -input=false
