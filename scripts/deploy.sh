@@ -57,6 +57,8 @@ for s in $services; do wait_rollout "$s" || failed=1; done
 
 # NLB: el target es la IP del nodo dentro de la VPC del ambiente + NodePort 30400 del gateway
 cd infra
+# -reconfigure: el checkout borra .terraform y el job lint-build del CI lo deja con -backend=false
+terraform init -input=false -reconfigure >/dev/null
 terraform workspace select "$env" >/dev/null
 tg=$(terraform output -raw nlb_target_group_arn)
 vpc=$(terraform output -raw vpc_id)

@@ -10,6 +10,7 @@ for env in "${@:-dev test prod}"; do
       echo "[$e] clúster corriendo"; continue
     fi
     echo "[$e] clúster caído, recreando..."
+    terraform init -input=false -reconfigure >/dev/null
     terraform workspace select "$e" >/dev/null
     terraform apply -replace=module.eks.aws_eks_cluster.this -auto-approve -input=false
   done
