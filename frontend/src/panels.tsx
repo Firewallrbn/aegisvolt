@@ -1,39 +1,57 @@
 // Paneles de la consola: reserva (dispara la SAGA), compensaciones, flags, historial, telemetría y flotas.
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useState, type CSSProperties } from 'react';
 import {
   FLAG_INFO, FLEETS, PRICE_PER_KWH, STATION_INFO, SURGE, finishCharge, reserveAndCharge, setFlag, telemetry,
   type Env, type Flag, type Saga, type Station, type Telemetry, type Wallet,
 } from './api';
-import { Charger, Num, Status, Van, shortId, time } from './ui';
+import { Charger, Chevron, Num, Status, Van, shortId, time } from './ui';
 
 const STEPS = ['RESERVE', 'CHARGE', 'ACTIVATE'] as const;
 const STEP_LABEL: Record<string, string> = { RESERVE: 'Reserva', CHARGE: 'Cobro', ACTIVATE: 'Activación' };
 
-// Línea de tiempo de una SAGA: los pasos hacia adelante y, debajo, las compensaciones en orden inverso
+// Acción que deshace cada paso (lo que hace su compensación)
+const UNDO: Record<string, string> = { RESERVE: 'Liberar conector', CHARGE: 'Reembolsar saldo', ACTIVATE: 'Detener carga' };
+
+// Línea de tiempo horizontal de una SAGA: los pasos de izquierda a derecha y, debajo de cada uno,
+// su compensación numerada en el orden en que se ejecutó (de derecha a izquierda)
 export function SagaTimeline({ saga }: { saga: Saga }) {
   const forward = new Map(saga.steps.filter((s) => s.status === 'DONE' || s.status === 'FAILED').map((s) => [s.step, s]));
   const back = saga.steps.filter((s) => s.status.startsWith('COMPENSAT'));
+  const undo = new Map(back.map((s, i) => [s.step, { ...s, n: i + 1 }]));
+  const failedAt = STEPS.findIndex((n) => forward.get(n)?.status === 'FAILED');
+  const reach = Math.max(failedAt, ...back.map((s) => STEPS.indexOf(s.step as typeof STEPS[number])));
   return (
     <div className="timeline">
-      <ol className="forward">
-        {STEPS.map((name) => {
+      <ol className="track">
+        {STEPS.map((name, i) => {
           const s = forward.get(name);
           return (
             <li key={name} className={s ? s.status.toLowerCase() : 'pending'}>
               <span className="node" aria-hidden="true" />
-              <b>{STEP_LABEL[name]}</b>
-              {s ? <Status value={s.status} /> : <span className="muted">no ejecutado</span>}
+              <b>{i + 1}. {STEP_LABEL[name]}</b>
+              {s ? <Status value={s.status} /> : <span className="muted small">no ejecutado</span>}
             </li>
           );
         })}
       </ol>
       {back.length > 0 && (
-        <ol className="backward" aria-label="Compensaciones">
-          {back.map((s, i) => (
-            <li key={i}><span aria-hidden="true">↺</span> {STEP_LABEL[s.step]} <Status value={s.status} /></li>
-          ))}
+        <ol className="undo" aria-label="Compensaciones, en orden de ejecución" style={{ '--reach': reach } as CSSProperties}>
+          {STEPS.map((name) => {
+            const c = undo.get(name);
+            return (
+              <li key={name}>
+                {c && (
+                  <span className={`undo-chip ${c.status === 'COMPENSATION_FAILED' ? 'bad' : ''}`}
+                    title={c.status === 'COMPENSATION_FAILED' ? 'La compensación falló' : 'Compensado'}>
+                    <i>{c.n}</i>↺ {UNDO[name] ?? STEP_LABEL[name]}
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ol>
       )}
+      {failedAt === 0 && back.length === 0 && <p className="muted small">Falló en el primer paso: no había nada que revertir.</p>}
       {saga.error && <p className="saga-error">{saga.error}</p>}
     </div>
   );
@@ -128,8 +146,8 @@ export function CompensationsPanel({ env, sagas }: { env: Env; sagas: Saga[] }) 
     <section className="glass warnings" aria-label="Compensaciones">
       <header>
         <h3>Compensaciones</h3>
-        <button className="icon-btn" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}
-          aria-label={collapsed ? 'Expandir' : 'Contraer'}>{collapsed ? '⌄' : '⌃'}</button>
+        <button className="icon-btn toggle" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Expandir' : 'Contraer'}><Chevron open={!collapsed} /></button>
       </header>
       {!collapsed && <>
         <p className="sub"><span aria-hidden="true">↺</span> SAGAs revertidas <span className="muted">({failed.length})</span>
@@ -141,7 +159,7 @@ export function CompensationsPanel({ env, sagas }: { env: Env; sagas: Saga[] }) 
               <button onClick={() => setOpen(open === s.id ? null : s.id)} aria-expanded={open === s.id}>
                 <span className="badge-dot" aria-hidden="true">{s.status === 'COMPENSATION_FAILED' ? '!' : '↺'}</span>
                 <span className="what">{s.error ?? 'Revertida'}<small>{s.fleetId} · {time(s.createdAt)}</small></span>
-                <span aria-hidden="true">{open === s.id ? '⌃' : '⌄'}</span>
+                <span className="incident-toggle"><Chevron open={open === s.id} /></span>
               </button>
               {open === s.id && (
                 <div className="incident-body">
@@ -160,13 +178,22 @@ export function CompensationsPanel({ env, sagas }: { env: Env; sagas: Saga[] }) 
 
 export function FlagsPanel({ env, flags, onChange }: { env: Env; flags: Flag[]; onChange: () => void }) {
   const [pending, setPending] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
   const toggle = async (f: Flag) => {
     setPending(f.name);
     try { await setFlag(env, f.name, !f.enabled); onChange(); } finally { setPending(null); }
   };
   return (
     <section className="glass flags" id="flags" aria-label={`Feature flags de ${env}`}>
-      <header><h3>Feature flags</h3><span className="env-tag">{env}</span></header>
+      <header>
+        <h3>Feature flags</h3>
+        <span className="head-actions">
+          <span className="env-tag">{env}</span>
+          <button className="icon-btn toggle" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Expandir' : 'Contraer'}><Chevron open={!collapsed} /></button>
+        </span>
+      </header>
+      {!collapsed && <>
       <ul>
         {flags.map((f) => (
           <li key={f.name}>
@@ -176,7 +203,8 @@ export function FlagsPanel({ env, flags, onChange }: { env: Env; flags: Flag[]; 
           </li>
         ))}
       </ul>
-      <p className="muted small">Se leen en cada petición: cambian el comportamiento sin redesplegar, solo en {env}.</p>
+      <p className="muted small">Se leen en cada petición: cambian el comportamiento sin redesplegar. Solo afectan a {env}.</p>
+      </>}
     </section>
   );
 }
