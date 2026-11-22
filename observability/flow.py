@@ -45,7 +45,7 @@ def scan(table: str) -> list[dict]:
         kw["ExclusiveStartKey"] = page["LastEvaluatedKey"]
 
 
-@task(retries=1, retry_delay_seconds=2)
+@task(retries=1, retry_delay_seconds=2, task_run_name="salud · {env}")
 def check_health(env: str) -> dict:
     api = next((a for a in apigw.get_apis()["Items"] if a["Name"] == f"aegisvolt-{env}"), None)
     if not api:
@@ -78,7 +78,7 @@ def find_inconsistencies(sagas: list[dict], connectors: list[dict], billing_mark
     return found
 
 
-@task
+@task(task_run_name="auditoría SAGA · {env}")
 def audit_sagas(env: str) -> dict:
     sagas = scan(f"aegisvolt-sagas-{env}")
     reservations = scan(f"aegisvolt-reservations-{env}")
@@ -89,7 +89,7 @@ def audit_sagas(env: str) -> dict:
     return {"total": len(sagas), "by_status": dict(Counter(s["status"] for s in sagas)), "issues": issues}
 
 
-@task
+@task(task_run_name="errores · {env}")
 def count_errors(env: str) -> int:
     since = int((time.time() - 3600) * 1000)
     groups = logs.describe_log_groups(logGroupNamePrefix=f"/aegisvolt/{env}/")["logGroups"]
@@ -97,33 +97,45 @@ def count_errors(env: str) -> int:
                                           filterPattern='"\\"level\\":\\"error\\""')["events"]) for g in groups)
 
 
-@flow(name="aegisvolt-observabilidad", log_prints=True)
-def observability(envs: list[str] = ENVS) -> list[dict]:
-    logger = get_run_logger()
-    rows, issues = [], []
-    for env in envs:
-        health, audit, errors = check_health.submit(env), audit_sagas.submit(env), count_errors.submit(env)
-        h, a, e = health.result(), audit.result(), errors.result()
-        rows.append({
-            "ambiente": env,
-            "salud": "UP" if h["up"] else f"DOWN ({h['detail']})",
-            "latencia_ms": h["latency_ms"],
-            "sagas": a["total"],
-            **{k.lower(): a["by_status"].get(k, 0) for k in
-               ["COMPLETED", "FINISHED", "COMPENSATED", "COMPENSATION_FAILED", "RUNNING"]},
-            "inconsistencias": len(a["issues"]),
-            "errores_1h": e,
-        })
-        issues += [f"[{env}] {i}" for i in a["issues"]]
-        logger.info("%s: %s, %d sagas, %d inconsistencias, %d errores/h", env, rows[-1]["salud"], a["total"],
-                    len(a["issues"]), e)
+@task(task_run_name="resumen · {env}")
+def summarize(env: str, h: dict, a: dict, e: int) -> dict:
+    """Junta las tres mediciones de un ambiente en una fila (en el grafo, las tres flechas convergen aquí)."""
+    row = {
+        "ambiente": env,
+        "salud": "UP" if h["up"] else f"DOWN ({h['detail']})",
+        "latencia_ms": h["latency_ms"],
+        "sagas": a["total"],
+        **{k.lower(): a["by_status"].get(k, 0) for k in
+           ["COMPLETED", "FINISHED", "COMPENSATED", "COMPENSATION_FAILED", "RUNNING"]},
+        "inconsistencias": len(a["issues"]),
+        "errores_1h": e,
+        "issues": [f"[{env}] {i}" for i in a["issues"]],
+    }
+    get_run_logger().info("%s: %s, %d sagas, %d inconsistencias, %d errores/h", env, row["salud"], a["total"],
+                          len(a["issues"]), e)
+    return row
 
-    create_table_artifact(key="aegisvolt-salud", table=rows, description="Salud, SAGAs y errores por ambiente")
+
+@task(task_run_name="reporte")
+def report(rows: list[dict]) -> list[dict]:
+    """Publica los artifacts y falla si hay inconsistencias (el flujo queda en rojo)."""
+    issues = [i for r in rows for i in r["issues"]]
+    table = [{k: v for k, v in r.items() if k != "issues"} for r in rows]
+    create_table_artifact(key="aegisvolt-salud", table=table, description="Salud, SAGAs y errores por ambiente")
     create_markdown_artifact(key="aegisvolt-inconsistencias", markdown="## Inconsistencias SAGA\n" + (
         "\n".join(f"- {i}" for i in issues) if issues else "Ninguna: todas las SAGAs están completas o compensadas."))
     if issues:
         raise RuntimeError(f"{len(issues)} inconsistencias SAGA: " + "; ".join(issues))
-    return rows
+    return table
+
+
+@flow(name="aegisvolt-observabilidad", log_prints=True)
+def observability(envs: list[str] = ENVS) -> list[dict]:
+    # Las 9 mediciones arrancan en paralelo; cada ambiente converge en su resumen y los tres en el reporte.
+    # Pasar los futures como argumentos es lo que dibuja las dependencias en el grafo de Prefect.
+    summaries = [summarize.submit(env, check_health.submit(env), audit_sagas.submit(env), count_errors.submit(env))
+                 for env in envs]
+    return report.submit(summaries).result()
 
 
 if __name__ == "__main__":
