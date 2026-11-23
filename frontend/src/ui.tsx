@@ -31,6 +31,16 @@ export function Status({ value }: { value: string }) {
   return <span className={`status ${s.tone}`}><i aria-hidden="true">{s.icon}</i>{s.label}</span>;
 }
 
+// Chevron que gira al expandir/contraer (en vez de los caracteres ⌄ ⌃, que cambian de tamaño según la fuente)
+export function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg className={`chevron ${open ? 'open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
 export function Van() {
   return (
     <svg className="lineart" viewBox="0 0 240 92" aria-hidden="true">

@@ -1,21 +1,11 @@
 import type maplibregl from 'maplibre-gl';
 import { useRef, useState } from 'react';
 import { ENVS, STATION_INFO, type Env } from './api';
-import { Hero } from './Hero';
+import { Hero, Logo } from './Hero';
 import { HOME, MapView, stationState } from './MapView';
 import { CompensationsPanel, FleetCard, FlagsPanel, HistoryTable, ReservePanel, TelemetryCard } from './panels';
 import { Num, SuccessChart } from './ui';
 import { useHealth, useSnapshot } from './useLive';
-
-function Logo() {
-  return (
-    <svg className="logo" viewBox="0 0 32 32" aria-label="AegisVolt">
-      <g strokeLinecap="round" strokeWidth="3.2" fill="none">
-        <path d="M9 21 19 9" stroke="#f3e6cf" /><path d="M13 24 23 12" stroke="#3fd27a" /><path d="M7 15 11 10" stroke="#8a8a8a" />
-      </g>
-    </svg>
-  );
-}
 
 export default function App() {
   const [env, setEnv] = useState<Env>(() => (ENVS as readonly string[]).includes(location.hash.slice(1)) ? location.hash.slice(1) as Env : 'dev');
@@ -41,17 +31,15 @@ export default function App() {
 
   return (
     <>
-      <Hero env={env} onEnv={setEnv} health={health} />
+      <Hero env={env} onEnv={setEnv} health={health} stats={data ? {
+        stations: stations.length, connectors: connectors.length, free, sagas: sagas.length, rate,
+        compensated: sagas.filter((s) => s.status === 'COMPENSATED').length,
+      } : null} />
 
       <section className="console" id="consola">
         <nav className="topbar" aria-label="Consola">
           <Logo />
-          <div className="tabs">
-            <a className="on" href="#consola">Mapa en vivo</a>
-            <a href="#flags">Flags</a>
-            <a href="#historial">Transacciones</a>
-            <a href="#telemetria">Telemetría</a>
-          </div>
+          <h2 className="console-title">Consola de operación</h2>
           <div className="env-switch" role="radiogroup" aria-label="Ambiente">
             {ENVS.map((e) => (
               <button key={e} role="radio" aria-checked={e === env} className={e === env ? 'on' : ''} onClick={() => setEnv(e)}>
@@ -86,7 +74,6 @@ export default function App() {
           <div className="stage">
             <MapView stations={stations} selected={selected} onSelect={pick} mapRef={mapRef} />
             <div className="stage-title">
-              <h2>Gestión de Carga</h2>
               <div className="station-pills">
                 {stations.map((s) => (
                   <button key={s.id} className={`pill ${s.id === selected ? 'on' : ''}`} onClick={() => pick(s.id)}>
