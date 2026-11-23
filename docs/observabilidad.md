@@ -43,17 +43,15 @@ El id de una SAGA fallida se obtiene del historial del frontend (columna SAGA) o
 
 ## Prefect
 
-`observability/flow.py` define el flujo **`aegisvolt-observabilidad`**. Por cada ambiente corre tres tareas en paralelo:
+`observability/flow.py` define el flujo **`aegisvolt-observabilidad`**. Lanza en paralelo tres tareas por ambiente; las de cada ambiente convergen en `summarize` y los tres resúmenes en `report`. Como cada tarea recibe los resultados de las anteriores, el grafo de Prefect dibuja esas dependencias.
 
 ```mermaid
-flowchart TB
-  F["flow aegisvolt-observabilidad"] --> E1["dev"] & E2["test"] & E3["prod"]
-  E1 --> H["check_health<br/>GET /health por API Gateway"]
-  E1 --> A["audit_sagas<br/>reglas de consistencia"]
-  E1 --> C["count_errors<br/>level=error, última hora"]
-  H & A & C --> T["artifact tabla<br/>aegisvolt-salud"]
-  A --> M["artifact markdown<br/>aegisvolt-inconsistencias"]
-  M --> X{"¿inconsistencias?"}
+flowchart LR
+  subgraph env["por ambiente: dev, test, prod"]
+    H["check_health<br/>GET /health por API Gateway"] & A["audit_sagas<br/>reglas de consistencia"] & C["count_errors<br/>level=error, última hora"] --> S["summarize"]
+  end
+  S --> R["report<br/>artifacts aegisvolt-salud<br/>y aegisvolt-inconsistencias"]
+  R --> X{"¿inconsistencias?"}
   X -- sí --> FAIL["flow Failed (rojo)"]
   X -- no --> OK["flow Completed"]
 ```

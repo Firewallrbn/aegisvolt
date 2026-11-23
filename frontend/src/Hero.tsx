@@ -1,119 +1,95 @@
-// Hero: estelas de luz tipo larga exposición (crema -> rojo) que se dibujan solas, con pulsos de "energía"
-// recorriéndolas. A la derecha, una regla tipo obturador que elige el ambiente (dev / test / prod).
-import { useEffect, useRef } from 'react';
+// Hero: carretera Hyperspeed (React Bits, preset "split") de fondo, CardNav como navegación,
+// titular con GradientText, regla tipo obturador para elegir el ambiente (dev / test / prod) y métricas en vivo.
+import type { CSSProperties } from 'react';
 import { ENVS, type Env } from './api';
+import CardNav, { type CardNavItem } from './components/CardNav';
+import GradientText from './components/GradientText';
+import Hyperspeed, { type HyperspeedProps } from './components/Hyperspeed';
+import SpecularButton from './components/SpecularButton';
 
-type Pt = [number, number];
-const LINES = 11;
+export type HeroStats = { stations: number; connectors: number; free: number; sagas: number; rate: number; compensated: number };
 
-function bezier(p0: Pt, p1: Pt, p2: Pt, p3: Pt, n: number): Pt[] {
-  const out: Pt[] = [];
-  for (let i = 0; i <= n; i++) {
-    const t = i / n, u = 1 - t;
-    out.push([
-      u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0],
-      u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1],
-    ]);
-  }
-  return out;
+// Paleta de la marca: turquesa (faros) + carmesí (luces traseras)
+export const BRAND = { teal: '#53c2c6', tealSoft: '#a4e3e6', tealMid: '#80d1d4', crimson: '#d40652', red: '#b91010' };
+
+const ROAD: HyperspeedProps = {
+  tailColors: [BRAND.red, BRAND.crimson, BRAND.red],
+  headColors: [BRAND.tealSoft, BRAND.tealMid, BRAND.teal],
+  poleColors: [BRAND.tealSoft],
+  roadColor: '#08080a',
+  lineColor: '#25252d',
+  curve: 'racing',
+  curvature: 0.75,
+  speed: 0.1,
+  boost: 3.5,
+  fov: 95,
+  boostFov: 130,
+  lanes: 2,
+  roadWidth: 9,
+  medianWidth: 5,
+  density: 60,
+  trailLength: 1.9,
+  lightSize: 0.9,
+  poles: 50,
+  dust: 160,
+  glow: 0.6,
+  reflections: 0.35,
+  roadOpacity: 0.35,
+  steer: 0.2,
+  interactive: false,
+};
+
+const NAV: CardNavItem[] = [
+  {
+    label: 'Operación',
+    description: 'Estaciones, conectores y energía en tiempo real',
+    bgColor: '#0f2426', textColor: BRAND.tealSoft,
+    links: [
+      { label: 'Mapa en vivo', href: '#consola' },
+      { label: 'Telemetría', href: '#telemetria' },
+    ],
+  },
+  {
+    label: 'Transacciones',
+    description: 'SAGA de reserva, cobro y activación',
+    bgColor: '#2a0a17', textColor: '#ff9cbc',
+    links: [
+      { label: 'Historial', href: '#historial' },
+      { label: 'Compensaciones', href: '#consola' },
+    ],
+  },
+  {
+    label: 'Plataforma',
+    description: 'Feature flags por ambiente: dev, test y prod',
+    links: [
+      { label: 'Feature flags', href: '#flags' },
+      { label: 'Ambientes', href: '#consola' },
+    ],
+  },
+];
+
+export function Logo({ className = 'logo' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 32 32" aria-hidden="true">
+      <g strokeLinecap="round" strokeWidth="3.2" fill="none">
+        <path d="M9 21 19 9" stroke={BRAND.tealSoft} /><path d="M13 24 23 12" stroke={BRAND.crimson} /><path d="M7 15 11 10" stroke="#5d6b6c" />
+      </g>
+    </svg>
+  );
 }
 
-// Cada estela sube desde abajo a la izquierda, se junta con las demás y se abre hacia abajo a la derecha
-function paths(w: number, h: number): { main: Pt[] }[] {
-  return Array.from({ length: LINES }, (_, i) => {
-    const t = i / (LINES - 1);
-    const c: Pt = [w * (0.64 + 0.035 * t), h * (0.385 + 0.085 * t)]; // cima del arco
-    // Tangente horizontal y continua en la cima (controles simétricos a cada lado): el arco queda redondo, sin quiebre
-    const k = w * (0.13 - 0.045 * t);
-    const a = bezier([w * (-0.04 + 0.66 * t), h * 1.04], [w * (0.22 + 0.42 * t), h * (0.6 + 0.05 * t)], [c[0] - k, c[1]], c, 140);
-    // la de más arriba en la curva es la exterior: termina más a la derecha, así las estelas no se cruzan
-    const b = bezier(c, [c[0] + k, c[1]], [w * (0.98 - 0.08 * t), h * (0.5 + 0.1 * t)], [w * (1.04 - 0.2 * t), h * 1.04], 120);
-    return { main: [...a, ...b.slice(1)] };
-  });
-}
-
-function stroke(ctx: CanvasRenderingContext2D, pts: Pt[], upto: number) {
-  ctx.beginPath();
-  ctx.moveTo(pts[0][0], pts[0][1]);
-  for (let i = 1; i < upto; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-  ctx.stroke();
-}
-
-function LightTrails() {
-  const ref = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = ref.current!;
-    const ctx = canvas.getContext('2d')!;
-    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let raf = 0, w = 0, h = 0, lines: ReturnType<typeof paths> = [];
-    const start = performance.now();
-
-    const resize = () => {
-      const dpr = Math.min(devicePixelRatio, 2);
-      w = canvas.clientWidth; h = canvas.clientHeight;
-      canvas.width = w * dpr; canvas.height = h * dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      lines = paths(w, h);
-    };
-
-    const frame = (now: number) => {
-      const elapsed = (now - start) / 1000;
-      const draw = reduced ? 1 : Math.min(1, elapsed / 2.4);
-      const ease = 1 - Math.pow(1 - draw, 3);
-      ctx.clearRect(0, 0, w, h);
-      const grad = ctx.createLinearGradient(w * 0.46, 0, w * 0.8, 0);
-      grad.addColorStop(0, '#f4e7cf');
-      grad.addColorStop(0.55, '#cfe3b4');
-      grad.addColorStop(1, '#3fd27a');
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.lineCap = 'round';
-
-      for (const [i, { main }] of lines.entries()) {
-        const upto = Math.max(2, Math.floor(main.length * Math.min(1, ease * 1.15 - i * 0.012)));
-        ctx.strokeStyle = grad;
-        // halo ancho y tenue + núcleo fino y brillante = brillo de larga exposición
-        ctx.globalAlpha = 0.16; ctx.lineWidth = 7; stroke(ctx, main, upto);
-        ctx.globalAlpha = 0.35; ctx.lineWidth = 3; stroke(ctx, main, upto);
-        ctx.globalAlpha = 0.95; ctx.lineWidth = 1.3; stroke(ctx, main, upto);
-
-        if (!reduced && draw === 1) {
-          // pulso de energía que recorre la estela
-          const len = 26, pos = ((elapsed * 0.16 + i * 0.137) % 1) * (main.length + len);
-          const from = Math.max(0, Math.floor(pos - len)), to = Math.min(main.length, Math.floor(pos));
-          if (to - from > 1) {
-            ctx.strokeStyle = '#fff6ea'; ctx.globalAlpha = 0.85; ctx.lineWidth = 2.2;
-            stroke(ctx, main.slice(from, to), to - from);
-          }
-        }
-      }
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = 'source-over';
-      if (!reduced) raf = requestAnimationFrame(frame);
-    };
-
-    resize();
-    raf = requestAnimationFrame(frame);
-    const ro = new ResizeObserver(() => { resize(); if (reduced) frame(performance.now()); });
-    ro.observe(canvas);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
-  }, []);
-
-  return <canvas ref={ref} className="hero-canvas" aria-hidden="true" />;
-}
+const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
 
 // Regla tipo obturador: 19 marcas, las tres mayores son los ambientes
 function EnvRuler({ env, onEnv, health }: { env: Env; onEnv: (e: Env) => void; health: Record<Env, boolean | null> }) {
   const majors: Record<number, Env> = { 3: 'dev', 9: 'test', 15: 'prod' };
   return (
     <div className="ruler" role="radiogroup" aria-label="Ambiente">
-      <div className="ruler-head"><span>Ambiente</span><b>{env}</b></div>
+      <div className="ruler-head"><span>Ambiente activo</span><b>{env}</b></div>
       <div className="ruler-ticks">
         {Array.from({ length: 19 }, (_, i) => {
           const e = majors[i];
-          return (
-            <span key={i} className={`tick ${i % 3 === 0 ? 'mid' : ''} ${e ? 'major' : ''} ${e === env ? 'on' : ''}`} />
-          );
+          return <span key={i} className={`tick ${i % 3 === 0 ? 'mid' : ''} ${e ? 'major' : ''} ${e === env ? 'on' : ''}`} />;
         })}
       </div>
       <div className="ruler-labels">
@@ -129,19 +105,77 @@ function EnvRuler({ env, onEnv, health }: { env: Env; onEnv: (e: Env) => void; h
   );
 }
 
-export function Hero(props: { env: Env; onEnv: (e: Env) => void; health: Record<Env, boolean | null> }) {
+export function Hero(props: { env: Env; onEnv: (e: Env) => void; health: Record<Env, boolean | null>; stats: HeroStats | null }) {
+  const { stats } = props;
+  const tiles = [
+    { k: 'Estaciones', v: stats ? String(stats.stations) : '—', d: `${stats?.connectors ?? 0} conectores de alta potencia` },
+    { k: 'Conectores libres', v: stats ? `${stats.free}/${stats.connectors}` : '—', d: 'disponibles para reservar ahora' },
+    { k: 'SAGAs ejecutadas', v: stats ? String(stats.sagas) : '—', d: `${stats?.compensated ?? 0} compensadas con rollback` },
+    { k: 'Tasa de éxito', v: stats ? `${stats.rate.toFixed(1)}%` : '—', d: 'objetivo > 80%' },
+  ];
+
   return (
     <section className="hero">
-      <LightTrails />
-      <div className="hero-copy">
-        <h1>Carga la ciudad<br />con energía.</h1>
-        <p>Reserva, cobro y activación de conectores de alta potencia para flotas eléctricas, en una sola transacción distribuida.</p>
-        <div className="hero-cta">
-          <a className="btn-primary" href="#consola">Abrir consola</a>
-          <a className="btn-link" href="#historial">Ver historial <span aria-hidden="true">→</span></a>
-        </div>
+      <div className="hero-road" aria-hidden="true"><Hyperspeed {...ROAD} /></div>
+      <div className="hero-veil" aria-hidden="true" />
+
+      <div className="hero-nav">
+        <CardNav
+          logo={<span className="brand"><Logo /><span>AegisVolt</span></span>}
+          logoAlt="AegisVolt"
+          items={NAV}
+          cta={{ label: 'Abrir consola', href: '#consola' }}
+          maxWidth={4000}
+          ariaLabel="Secciones"
+          style={{
+            // barra casi negra y CTA en vidrio oscuro con borde turquesa (igual al "Abrir consola" del hero)
+            '--cn-panel': 'rgba(8, 8, 11, 0.86)',
+            '--cn-solid': '#08080b',
+            '--cn-tile': 'linear-gradient(180deg, #17171c 0%, #111115 100%)',
+            '--cn-cta': 'rgba(83, 194, 198, 0.08)',
+            '--cn-cta-ink': '#e8f7f8',
+            '--cn-cta-shadow': 'inset 0 0 0 1px rgba(83, 194, 198, 0.5), 0 0 18px -6px rgba(83, 194, 198, 0.5)',
+            '--cn-cta-hover': 'brightness(1.35)',
+          } as CSSProperties}
+        />
       </div>
-      <EnvRuler {...props} />
+
+      <div className="hero-body">
+        <div className="hero-copy">
+          <h1>
+            <span className="line">Carga de alta potencia</span>{' '}
+            <span className="line">para{' '}
+              <GradientText colors={[BRAND.tealSoft, BRAND.teal, BRAND.crimson, BRAND.red]} animationSpeed={6} className="hero-grad">
+                flotas eléctricas.
+              </GradientText>
+            </span>
+          </h1>
+          <p>Reserva el conector, cobra a tu flota y activa la carga en un solo clic. Si un cargador falla, el dinero
+            vuelve solo: cero vehículos varados, cero cobros perdidos.</p>
+          <div className="hero-cta">
+            <SpecularButton size="lg" radius={999} tint={BRAND.teal} tintOpacity={0.1} blur={10} textColor="#e8f7f8"
+              lineColor={BRAND.tealSoft} baseColor="#3a3a44" idleIntensity={0.25} intensity={0.7} glow={0.5} proximity={140}
+              onClick={() => go('consola')}>
+              Abrir consola
+            </SpecularButton>
+            <SpecularButton size="lg" radius={999} tintOpacity={0.05} blur={10}
+              lineColor={BRAND.crimson} baseColor="#3a3a44" idleIntensity={0.25} intensity={0.7} glow={0.5} proximity={140}
+              onClick={() => go('historial')}>
+              Ver historial <span aria-hidden="true">→</span>
+            </SpecularButton>
+          </div>
+        </div>
+        <EnvRuler {...props} />
+      </div>
+
+      <dl className="hero-stats">
+        {tiles.map((t) => (
+          <div key={t.k} className="hero-stat">
+            <dt>{t.k}</dt>
+            <dd><b>{t.v}</b><small>{t.d}</small></dd>
+          </div>
+        ))}
+      </dl>
     </section>
   );
 }
